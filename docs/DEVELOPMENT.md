@@ -25,6 +25,8 @@ ScreenCaptureKit excludes this app from its own capture. Audio capture is disabl
 
 The HID reader runs off the main thread. A Metal fragment shader and reusable blur pyramid render the effect. Reduce Motion uses a simple fade. Capture stops when the effect clears, and sensor/capture failures restore the desktop.
 
+Launch-at-login uses macOS `SMAppService.mainApp`; it does not add a helper executable. The setting is opt-in and its status is read from Service Management so changes made in System Settings are reflected. Background startup only resumes following when Screen Recording access is already authorized and a valid lid reading arrives; it never requests permission without an explicit user action.
+
 macOS owns sleep and the secure login screen. Animation cannot be guaranteed while the display is asleep, during login or with protected content. Capture may take a moment to warm up; the desktop and live preview remain clear until a fresh frame is ready.
 
 ## Verify
@@ -49,7 +51,7 @@ The optimized arm64 build and 19 Swift tests passed on an Apple M4 MacBook Pro. 
 
 ## Contributing
 
-Issues and focused pull requests are welcome. Include macOS version, Mac model, whether its lid sensor is detected, reproduction steps and relevant test results. Do not attach private desktop recordings or signing credentials. Run the checks above for renderer or motion changes. Keep the app dependency-free and respect Reduce Motion and existing power limits.
+Issues and focused pull requests are welcome. Include macOS version, Mac model, whether its lid sensor is detected, reproduction steps and relevant test results. Do not attach private desktop recordings or signing credentials. Run the checks above for renderer, motion, or lifecycle changes. Keep the app dependency-free and respect Reduce Motion and existing power limits.
 
 ## Credits
 

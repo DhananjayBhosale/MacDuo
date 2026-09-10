@@ -26,7 +26,7 @@
 
 <p><a href="https://macduo.dhananjaytech.app/#effects"><img src="docs/assets/roll.jpg" alt="Roll effect" width="24%"> <img src="docs/assets/shutter.jpg" alt="Shutter effect" width="24%"> <img src="docs/assets/flex.jpg" alt="Flex effect" width="24%"> <img src="docs/assets/iris.jpg" alt="Iris effect" width="24%"></a></p>
 
-Hold the lid still and the screen clears after **1–5 seconds**—**2 seconds** by default. Live preview, compact floating controls, orange Light/Dark themes, and menu-bar access are included. Close settings or switch desktops: Mac Duo keeps following in the background, without raising its window. Press **Esc** or **⌃⌥⌘F** to pause.
+Hold the lid still and the screen clears after **1–5 seconds**—**2 seconds** by default. Live preview, compact floating controls, orange Light/Dark themes, and menu-bar access are included. Turn on **Launch at login** to start from the menu bar and resume automatically when Screen Recording access is already allowed. Close settings or switch desktops: Mac Duo keeps following in the background, without raising its window. Press **Esc** or **⌃⌥⌘F** to pause.
 
 ## Install
 
@@ -38,6 +38,8 @@ Hold the lid still and the screen clears after **1–5 seconds**—**2 seconds**
 4. In Mac Duo, click **Enable Mac Duo** and allow **Screen Recording** when prompted. Reopen the app if macOS asks. Desktop frames stay in memory; nothing is recorded or uploaded.
 
 Try **Replay** first—it works without Screen Recording permission. For manual control, turn off **Follow my lid**. Keep **Clear when the lid is still** enabled for normal use at any angle.
+
+To start automatically, enable **Launch at login** in the Settings window or the menu-bar menu. Mac Duo never asks for Screen Recording access while starting in the background; allow it once from the explicit **Enable Mac Duo** button, then future logins can resume following automatically.
 
 <details><summary><strong>Updating or using the ZIP instead</strong></summary>
 

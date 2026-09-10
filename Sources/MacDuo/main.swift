@@ -28,6 +28,7 @@ import OSLog
             MainActor.assumeIsolated { self?.fitSettingsWindow() }
         }
         model.showWindow = { [weak self] in self?.showSettings() }
+        model.refreshLaunchAtLoginStatus()
         model.overlayVisibilityChanged = { [weak self] visible in
             guard let self else { return }
             self.updateSettingsLevel()
@@ -44,7 +45,12 @@ import OSLog
         let submenu = NSMenu();submenu.addItem(effectItem());submenu.addItem(appearanceItem());submenu.addItem(.separator())
         submenu.addItem(withTitle:"Quit Mac Duo",action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
         appItem.submenu = submenu;NSApp.mainMenu = appMenu
-        showSettings()
+        // Login items are accessory apps and should remain in the menu bar. A
+        // manually opened app remains discoverable through its Settings window.
+        DispatchQueue.main.asyncAfter(deadline:.now()+0.15) { [weak self] in
+            guard let self else { return }
+            if !self.model.launchAtLogin || NSApp.isActive { self.showSettings() }
+        }
         if let index = CommandLine.arguments.firstIndex(of:"--overlay-check"), index+1 < CommandLine.arguments.count {
             let path = CommandLine.arguments[index+1]
             DispatchQueue.main.asyncAfter(deadline:.now()+1) { [weak self] in self?.model.checkOverlay(output:path) }
@@ -95,7 +101,10 @@ import OSLog
             logger.notice("Settings level changed; elevated: \(elevated,privacy:.public); app active: \(NSApp.isActive,privacy:.public).")
         }
     }
-    func applicationDidBecomeActive(_ notification: Notification) { updateSettingsLevel() }
+    func applicationDidBecomeActive(_ notification: Notification) {
+        model.refreshLaunchAtLoginStatus()
+        updateSettingsLevel()
+    }
     func applicationDidResignActive(_ notification: Notification) { window?.level = .normal }
     func windowDidBecomeKey(_ notification: Notification) { updateSettingsLevel() }
     func windowDidResignKey(_ notification: Notification) { window?.level = .normal }
@@ -105,6 +114,7 @@ import OSLog
     }
     func windowWillClose(_ notification:Notification) { model.previewView?.isPaused = true }
     @objc func toggleEffect() { if model.enabled { model.pause() } else { model.enable() } }
+    @objc func toggleLaunchAtLogin() { model.launchAtLogin.toggle() }
     @objc func testEffect() { model.testDesktop() }
     @objc private func setAppearance(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
@@ -152,6 +162,7 @@ import OSLog
             }
             return
         }
+        model.refreshLaunchAtLoginStatus()
         menu.removeAllItems()
         let state = NSMenuItem(title:model.lidAngle.map{String(format:"Lid angle: %.0f°",$0)} ?? "Sensor unavailable",action:nil,keyEquivalent:"")
         state.isEnabled = false;menu.addItem(state)
@@ -161,9 +172,21 @@ import OSLog
         let test = menu.addItem(withTitle:"Test desktop for 8 seconds",action:#selector(testEffect),keyEquivalent:"");test.target = self
         menu.addItem(effectItem())
         menu.addItem(appearanceItem())
+        let login = menu.addItem(withTitle:"Launch at Login",action:#selector(toggleLaunchAtLogin),keyEquivalent:"")
+        login.target = self
+        login.state = model.launchAtLogin ? .on : .off
+        login.toolTip = model.launchAtLoginStatusText
+        if model.launchAtLoginStatus == .requiresApproval {
+            login.title = "Launch at Login (Approval Needed)"
+        }
+        if model.launchAtLoginStatus == .requiresApproval {
+            let approval = menu.addItem(withTitle:"Open Login Items Settings…",action:#selector(openLoginItems),keyEquivalent:"")
+            approval.target = self
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle:"Quit Mac Duo",action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
     }
+    @objc private func openLoginItems() { model.openLoginItems() }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows flag:Bool) -> Bool { showSettings();return true }
     func applicationWillTerminate(_ notification:Notification) {

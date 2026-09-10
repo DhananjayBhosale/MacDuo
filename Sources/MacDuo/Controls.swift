@@ -130,6 +130,13 @@ struct Controls: View {
     private var settings: some View {
         VStack(alignment:.leading,spacing:10) {
             effectPicker
+            Toggle("Launch at login",isOn:$model.launchAtLogin)
+                .toggleStyle(.switch).controlSize(.small).font(.system(size:11.5,weight:.medium))
+                .help(model.launchAtLoginStatusText)
+            if model.launchAtLoginStatus == .requiresApproval {
+                Button("Open Login Items Settings…") { model.openLoginItems() }
+                    .buttonStyle(.link).font(.system(size:10.5,weight:.medium))
+            }
             Toggle("Follow my lid",isOn:$model.followLid)
                 .toggleStyle(.switch).controlSize(.small).font(.system(size:11.5,weight:.medium))
             slider("Preview angle",value:Binding(get:{model.followLid ? model.lidAngle ?? model.clearAngle : model.previewAngle},

@@ -6,6 +6,7 @@ import FoldCore
 import ScreenCaptureKit
 import OSLog
 import IOKit.ps
+import ServiceManagement
 
 final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { false }
@@ -83,6 +84,9 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     @Published var stillnessDelay = UserDefaults.standard.object(forKey:"stillnessDelay") as? Double ?? 2 {
         didSet { UserDefaults.standard.set(stillnessDelay,forKey:"stillnessDelay") }
     }
+    @Published var launchAtLogin = AppModel.loginItemIsRegistered {
+        didSet { updateLaunchAtLogin() }
+    }
     @Published var demoRunning = false
     @Published var previewPlaying = false
     @Published var sensorAvailable = false
@@ -119,11 +123,36 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     private var notifications: [NSObjectProtocol] = []
     private var syntheticCheckPath: String?
     private var presentedFrames = 0
+    private var updatingLoginItem = false
+    private var autoResumeAttempted = false
     var showWindow: (() -> Void)?
     var overlayVisibilityChanged: ((Bool) -> Void)?
 
+    private static var loginItemIsRegistered: Bool {
+        switch SMAppService.mainApp.status {
+        case .enabled, .requiresApproval: return true
+        case .notRegistered, .notFound: return false
+        @unknown default: return false
+        }
+    }
+
+    var launchAtLoginStatus: SMAppService.Status { SMAppService.mainApp.status }
+
+    var launchAtLoginStatusText: String {
+        switch launchAtLoginStatus {
+        case .enabled: return "Launch at login is enabled."
+        case .requiresApproval: return "Approve Mac Duo in System Settings → Login Items."
+        case .notRegistered: return "Mac Duo will stay off until you open it."
+        case .notFound: return "Login item status is unavailable."
+        @unknown default: return "Login item status is unavailable."
+        }
+    }
+
     init() {
         NSApp.appearance = appearance.native
+        if launchAtLogin && !hasPermission {
+            status = "Mac Duo is ready in the menu bar. Allow Screen Recording to follow your lid automatically."
+        }
         sensor.onReading = { [weak self] angle in
             guard let self else { return }
             if self.lidAngle != angle { self.lidAngle = angle }
@@ -138,6 +167,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
                 }
             }
             if angle == nil && self.enabled { self.pause("Lid sensor unavailable. Use the preview or reconnect the sensor.") }
+            self.resumeAtLoginIfPossible()
             self.update()
         }
         capture.onFirstFrame = { [weak self] in self?.update() }
@@ -150,6 +180,52 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         }
         RunLoop.main.add(timer!,forMode:.common)
         observeWorkspace()
+    }
+
+    func refreshLaunchAtLoginStatus() {
+        let registered = Self.loginItemIsRegistered
+        guard launchAtLogin != registered else { return }
+        updatingLoginItem = true
+        launchAtLogin = registered
+        updatingLoginItem = false
+    }
+
+    func openLoginItems() { SMAppService.openSystemSettingsLoginItems() }
+
+    private func updateLaunchAtLogin() {
+        guard !updatingLoginItem else { return }
+        let service = SMAppService.mainApp
+        do {
+            if launchAtLogin {
+                try service.register()
+                status = service.status == .requiresApproval
+                    ? "Approve Mac Duo in System Settings → Login Items."
+                    : (hasPermission
+                        ? "Mac Duo will launch automatically at login."
+                        : "Mac Duo will launch at login. Allow Screen Recording with Enable Mac Duo to resume following.")
+                resumeAtLoginIfPossible()
+            } else {
+                autoResumeAttempted = false
+                try service.unregister()
+                status = "Mac Duo will not launch automatically at login."
+            }
+        } catch {
+            updatingLoginItem = true
+            launchAtLogin = Self.loginItemIsRegistered
+            updatingLoginItem = false
+            status = "Could not update Login Items: \(error.localizedDescription)"
+            logger.error("Launch-at-login update failed: \(error.localizedDescription,privacy:.public)")
+        }
+    }
+
+    /// Login startup never requests capture permission. If access was already
+    /// granted, the first valid sensor reading resumes the effect automatically.
+    private func resumeAtLoginIfPossible() {
+        guard launchAtLogin, !autoResumeAttempted, !enabled, sensorAvailable else { return }
+        hasPermission = CGPreflightScreenCaptureAccess()
+        guard hasPermission else { return }
+        autoResumeAttempted = true
+        enable()
     }
 
     var previewProgress: Double {
@@ -232,6 +308,10 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         guard !checkingPermission else { return }
         guard device != nil else { status = "This Mac does not have a supported Metal GPU.";return }
         guard sensorAvailable else { status = "No working lid angle sensor was found. The preview still works.";return }
+        // A successful explicit enable (or an automatic one) counts as this
+        // process's single resume attempt. This keeps an explicit Pause from
+        // being undone by the next 30 Hz sensor reading.
+        autoResumeAttempted = true
         checkingPermission = true
         status = "Checking screen access…"
         enableTask = Task { [weak self] in
