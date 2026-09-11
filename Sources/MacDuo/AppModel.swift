@@ -15,7 +15,9 @@ final class OverlayPanel: NSPanel {
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    func localizedTitle(_ language: AppLanguage) -> String {
+        AppLocalization.text(rawValue.capitalized, language: language)
+    }
     var symbol: String {
         switch self {
         case .system: return "circle.lefthalf.filled"
@@ -36,7 +38,15 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     @Published var lidAngle: Double?
     @Published var enabled = false
     @Published var checkingPermission = false
-    @Published var status = "Preview is ready. Enable Mac Duo to use your desktop."
+    @Published private(set) var status = ""
+    @Published var language = AppLanguage.initial {
+        didSet {
+            guard oldValue != language else { return }
+            UserDefaults.standard.set(language.rawValue, forKey: "language")
+            publishStatus()
+            languageChanged?()
+        }
+    }
     @Published var hasPermission = CGPreflightScreenCaptureAccess()
     @Published var followLid = UserDefaults.standard.object(forKey:"followLid") as? Bool ?? true {
         didSet { UserDefaults.standard.set(followLid,forKey:"followLid") }
@@ -119,11 +129,14 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     private var notifications: [NSObjectProtocol] = []
     private var syntheticCheckPath: String?
     private var presentedFrames = 0
+    private var statusSource = "Preview is ready. Enable Mac Duo to use your desktop."
     var showWindow: (() -> Void)?
     var overlayVisibilityChanged: ((Bool) -> Void)?
+    var languageChanged: (() -> Void)?
 
     init() {
         NSApp.appearance = appearance.native
+        publishStatus()
         sensor.onReading = { [weak self] angle in
             guard let self else { return }
             if self.lidAngle != angle { self.lidAngle = angle }
@@ -223,17 +236,34 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
     private func updateStillnessStatus() {
         guard enabled, !demoRunning else { return }
-        status = shouldClearForStillness
+        setStatus(shouldClearForStillness
             ? "Lid is still. Move it to animate again."
-            : "Following your lid. Close it gently to see the effect."
+            : "Following your lid. Close it gently to see the effect.")
+    }
+
+    func text(_ key: String) -> String {
+        AppLocalization.text(key, language: language)
+    }
+
+    func format(_ key: String, _ arguments: CVarArg...) -> String {
+        String(format: text(key), arguments: arguments)
+    }
+
+    func setStatus(_ english: String) {
+        statusSource = english
+        publishStatus()
+    }
+
+    private func publishStatus() {
+        status = AppLocalization.dynamic(statusSource, language: language)
     }
 
     func enable(startDesktopTest: Bool = false) {
         guard !checkingPermission else { return }
-        guard device != nil else { status = "This Mac does not have a supported Metal GPU.";return }
-        guard sensorAvailable else { status = "No working lid angle sensor was found. The preview still works.";return }
+        guard device != nil else { setStatus("This Mac does not have a supported Metal GPU.");return }
+        guard sensorAvailable else { setStatus("No working lid angle sensor was found. The preview still works.");return }
         checkingPermission = true
-        status = "Checking screen access…"
+        setStatus("Checking screen access…")
         enableTask = Task { [weak self] in
             guard let self else { return }
             defer { self.checkingPermission = false }
@@ -244,7 +274,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
                 guard !Task.isCancelled else { return }
                 self.hasPermission = true
                 self.enabled = true
-                self.status = "Following your lid. Close it gently to see the effect."
+                self.setStatus("Following your lid. Close it gently to see the effect.")
                 self.updateStillnessStatus()
                 self.logger.notice("Enable succeeded: ScreenCaptureKit access verified.")
                 if startDesktopTest { self.beginDesktopTest() } else { self.update() }
@@ -254,9 +284,9 @@ enum AppAppearance: String, CaseIterable, Identifiable {
                 let failure = error as NSError
                 if failure.domain == SCStreamErrorDomain && failure.code == SCStreamError.Code.userDeclined.rawValue {
                     self.hasPermission = false
-                    self.status = "Screen access was not accepted. Allow the Mac Duo copy in Applications, then quit and reopen it. If its permission was already on for an older build, remove that old entry and add the current app."
+                    self.setStatus("Screen access was not accepted. Allow the Mac Duo copy in Applications, then quit and reopen it. If its permission was already on for an older build, remove that old entry and add the current app.")
                 } else {
-                    self.status = "Could not enable screen capture: \(error.localizedDescription)"
+                    self.setStatus("Could not enable screen capture: \(error.localizedDescription)")
                 }
                 self.logger.error("Enable failed: \(failure.domain,privacy:.public) / \(failure.code)")
             }
@@ -277,7 +307,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
             syntheticCheckPath = nil
         }
         enabled = false;demoStart = nil;demoRunning = false
-        hideOverlay();capture.stop();status = message
+        hideOverlay();capture.stop();setStatus(message)
     }
 
     func playPreview() { previewStart = ProcessInfo.processInfo.systemUptime;previewPlaying = true }
@@ -289,7 +319,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
     private func beginDesktopTest() {
         demoStart = ProcessInfo.processInfo.systemUptime;demoRunning = true
-        status = "Eight-second desktop test. Press Esc to stop."
+        setStatus("Eight-second desktop test. Press Esc to stop.")
         update()
     }
 
@@ -302,7 +332,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
             capture.frames.put(try factory.makeSyntheticFrame())
             syntheticCheckPath = output;presentedFrames = 0
             enabled = true;demoStart = ProcessInfo.processInfo.systemUptime;demoRunning = true
-            status = "Testing the overlay with generated artwork. Esc stops the test."
+            setStatus("Testing the overlay with generated artwork. Esc stops the test.")
             update()
         } catch { pause(error.localizedDescription) }
     }
@@ -363,7 +393,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         if let start = demoStart, now-start > demoDuration {
             if syntheticCheckPath != nil { pause("Synthetic overlay test completed.");return }
             demoStart = nil;demoRunning = false
-            status = "Desktop test finished. Following your lid."
+            setStatus("Desktop test finished. Following your lid.")
             updateStillnessStatus()
             logger.notice("Desktop test completed; overlay is clearing.")
         }
@@ -375,7 +405,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
             if capture.isRunning { capture.stop() }
             if !waitingForSensor {
                 waitingForSensor = true
-                status = "Waiting for the lid sensor. Your desktop is clear."
+                setStatus("Waiting for the lid sensor. Your desktop is clear.")
                 logger.notice("Sensor reports delayed: overlay cleared; awaiting fresh readings.")
             }
             return
@@ -464,7 +494,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         },1,&eventType,context,&hotKeyHandler)
         let id = EventHotKeyID(signature:0x4C464C57,id:1)
         let result = RegisterEventHotKey(UInt32(kVK_ANSI_F),UInt32(controlKey|optionKey|cmdKey),id,GetApplicationEventTarget(),0,&hotKey)
-        if result != noErr { status = "Global pause shortcut unavailable. Esc will remain available during the effect." }
+        if result != noErr { setStatus("Global pause shortcut unavailable. Esc will remain available during the effect.") }
     }
 
     private func registerEscape() -> Bool {

@@ -11,6 +11,7 @@ import OSLog
     private let logger = Logger(subsystem:"local.lidflow.mac",category:"settings")
     func applicationDidFinishLaunching(_ notification: Notification) {
         model = AppModel()
+        model.languageChanged = { [weak self] in self?.refreshLocalization() }
         let content = NSHostingView(rootView:Controls(model:model))
         // The window owns its size. SwiftUI's ideal content height must never
         // stretch it to the screen edges; every control stays visible beside the preview.
@@ -37,13 +38,9 @@ import OSLog
         }
         statusItem = NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength)
         statusItem.button?.image = AppBrand.menuBarMark
-        statusItem.button?.toolTip = "Mac Duo — your desktop follows your lid"
+        statusItem.button?.toolTip = model.text("Mac Duo — your desktop follows your lid")
         let menu = NSMenu();menu.delegate = self;statusItem.menu = menu
-        let appMenu = NSMenu()
-        let appItem = NSMenuItem();appMenu.addItem(appItem)
-        let submenu = NSMenu();submenu.addItem(effectItem());submenu.addItem(appearanceItem());submenu.addItem(.separator())
-        submenu.addItem(withTitle:"Quit Mac Duo",action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
-        appItem.submenu = submenu;NSApp.mainMenu = appMenu
+        rebuildApplicationMenu()
         showSettings()
         if let index = CommandLine.arguments.firstIndex(of:"--overlay-check"), index+1 < CommandLine.arguments.count {
             let path = CommandLine.arguments[index+1]
@@ -116,32 +113,69 @@ import OSLog
         // Selecting an effect saves it and redraws. It starts no full-screen test.
         model.effect = FoldEffect.resolve(persisted:rawValue)
     }
+    @objc private func setLanguage(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let language = AppLanguage(rawValue:rawValue) else { return }
+        model.language = language
+    }
+    private func refreshLocalization() {
+        statusItem.button?.toolTip = model.text("Mac Duo — your desktop follows your lid")
+        rebuildApplicationMenu()
+    }
+    private func rebuildApplicationMenu() {
+        let appMenu = NSMenu()
+        let appItem = NSMenuItem();appMenu.addItem(appItem)
+        let submenu = NSMenu()
+        submenu.addItem(effectItem())
+        submenu.addItem(appearanceItem())
+        submenu.addItem(languageItem())
+        submenu.addItem(.separator())
+        submenu.addItem(withTitle:model.text("Quit Mac Duo"),action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
+        appItem.submenu = submenu
+        NSApp.mainMenu = appMenu
+    }
     private func effectItem() -> NSMenuItem {
-        let item = NSMenuItem(title:"Effect",action:nil,keyEquivalent:"")
+        let item = NSMenuItem(title:model.text("Effect"),action:nil,keyEquivalent:"")
         item.image = NSImage(systemSymbolName:model.effect.symbol,accessibilityDescription:nil)
-        let menu = NSMenu(title:"Effect");menu.identifier = NSUserInterfaceItemIdentifier("effect");menu.delegate = self
+        let menu = NSMenu(title:model.text("Effect"));menu.identifier = NSUserInterfaceItemIdentifier("effect");menu.delegate = self
         for effect in FoldEffect.allCases {
-            let option = menu.addItem(withTitle:effect.title,action:#selector(setEffect(_:)),keyEquivalent:"")
+            let option = menu.addItem(withTitle:effect.localizedTitle(model.language),action:#selector(setEffect(_:)),keyEquivalent:"")
             option.target = self;option.representedObject = effect.persistedIdentifier
-            option.toolTip = effect.summary
+            option.toolTip = effect.localizedSummary(model.language)
             option.state = model.effect == effect ? .on : .off
         }
         item.submenu = menu
         return item
     }
     private func appearanceItem() -> NSMenuItem {
-        let item = NSMenuItem(title:"Appearance",action:nil,keyEquivalent:"")
+        let item = NSMenuItem(title:model.text("Appearance"),action:nil,keyEquivalent:"")
         item.image = NSImage(systemSymbolName:"circle.lefthalf.filled",accessibilityDescription:nil)
-        let menu = NSMenu(title:"Appearance");menu.identifier = NSUserInterfaceItemIdentifier("appearance");menu.delegate = self
+        let menu = NSMenu(title:model.text("Appearance"));menu.identifier = NSUserInterfaceItemIdentifier("appearance");menu.delegate = self
         for appearance in AppAppearance.allCases {
-            let option = menu.addItem(withTitle:appearance.title,action:#selector(setAppearance(_:)),keyEquivalent:"")
+            let option = menu.addItem(withTitle:appearance.localizedTitle(model.language),action:#selector(setAppearance(_:)),keyEquivalent:"")
             option.target = self;option.representedObject = appearance.rawValue
             option.state = model.appearance == appearance ? .on : .off
         }
         item.submenu = menu
         return item
     }
+    private func languageItem() -> NSMenuItem {
+        let item = NSMenuItem(title:model.text("Language"),action:nil,keyEquivalent:"")
+        item.image = NSImage(systemSymbolName:"globe",accessibilityDescription:nil)
+        let menu = NSMenu(title:model.text("Language"));menu.identifier = NSUserInterfaceItemIdentifier("language");menu.delegate = self
+        for language in AppLanguage.allCases {
+            let option = menu.addItem(withTitle:language.displayName,action:#selector(setLanguage(_:)),keyEquivalent:"")
+            option.target = self;option.representedObject = language.rawValue
+            option.state = model.language == language ? .on : .off
+        }
+        item.submenu = menu
+        return item
+    }
     func menuWillOpen(_ menu:NSMenu) {
+        if menu.identifier?.rawValue == "language" {
+            for item in menu.items { item.state = item.representedObject as? String == model.language.rawValue ? .on : .off }
+            return
+        }
         if menu.identifier?.rawValue == "appearance" {
             for item in menu.items { item.state = item.representedObject as? String == model.appearance.rawValue ? .on : .off }
             return
@@ -153,16 +187,17 @@ import OSLog
             return
         }
         menu.removeAllItems()
-        let state = NSMenuItem(title:model.lidAngle.map{String(format:"Lid angle: %.0f°",$0)} ?? "Sensor unavailable",action:nil,keyEquivalent:"")
+        let state = NSMenuItem(title:model.lidAngle.map{model.format("Lid angle: %.0f°",$0)} ?? model.text("Sensor unavailable"),action:nil,keyEquivalent:"")
         state.isEnabled = false;menu.addItem(state)
         menu.addItem(.separator())
-        let toggle = menu.addItem(withTitle:model.enabled ? "Pause Mac Duo" : "Enable Mac Duo",action:#selector(toggleEffect),keyEquivalent:"");toggle.target = self
-        let settings = menu.addItem(withTitle:"Open Mac Duo…",action:#selector(showSettings),keyEquivalent:",");settings.target = self
-        let test = menu.addItem(withTitle:"Test desktop for 8 seconds",action:#selector(testEffect),keyEquivalent:"");test.target = self
+        let toggle = menu.addItem(withTitle:model.text(model.enabled ? "Pause Mac Duo" : "Enable Mac Duo"),action:#selector(toggleEffect),keyEquivalent:"");toggle.target = self
+        let settings = menu.addItem(withTitle:model.text("Open Mac Duo…"),action:#selector(showSettings),keyEquivalent:",");settings.target = self
+        let test = menu.addItem(withTitle:model.text("Test desktop for 8 seconds"),action:#selector(testEffect),keyEquivalent:"");test.target = self
         menu.addItem(effectItem())
         menu.addItem(appearanceItem())
+        menu.addItem(languageItem())
         menu.addItem(.separator())
-        menu.addItem(withTitle:"Quit Mac Duo",action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
+        menu.addItem(withTitle:model.text("Quit Mac Duo"),action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows flag:Bool) -> Bool { showSettings();return true }
