@@ -28,6 +28,8 @@
 
 Hold the lid still and the screen clears after **1–5 seconds**—**2 seconds** by default. Live preview, compact floating controls, orange Light/Dark themes, and menu-bar access are included. Close settings or switch desktops: Mac Duo keeps following in the background, without raising its window. Press **Esc** or **⌃⌥⌘F** to pause.
 
+The interface supports **English and Simplified Chinese**. Use the language menu in the settings header or menu bar; the selection is remembered across launches.
+
 ## Install
 
 > [!NOTE]
