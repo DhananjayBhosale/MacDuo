@@ -74,7 +74,7 @@
 "Synthetic overlay test completed." = "Synthetic overlay test completed.";
 "Desktop test finished. Following your lid." = "Desktop test finished. Following your lid.";
 "Waiting for the lid sensor. Your desktop is clear." = "Waiting for the lid sensor. Your desktop is clear.";
-"Mac Duo needs an active, unmirrored built-in display." = "Mac Duo needs an active, unmirrored built-in display.";
+"Waiting for an active, unmirrored built-in display. Following will resume automatically." = "Waiting for an active, unmirrored built-in display. Following will resume automatically.";
 "Cannot capture the desktop: %@" = "Cannot capture the desktop: %@";
 "Could not register Esc. Close other keyboard utilities and try again." = "Could not register Esc. Close other keyboard utilities and try again.";
 "Stopped with the keyboard shortcut. Your desktop is clear." = "Stopped with the keyboard shortcut. Your desktop is clear.";

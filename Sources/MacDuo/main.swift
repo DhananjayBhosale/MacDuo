@@ -10,21 +10,17 @@ import OSLog
     private var statusItem: NSStatusItem!
     private var screenObserver: NSObjectProtocol?
     private let logger = Logger(subsystem:"local.lidflow.mac",category:"settings")
+    private let launchLogger = Logger(subsystem:"local.lidflow.mac",category:"launch")
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let launchStartedAt = ProcessInfo.processInfo.systemUptime
         model = AppModel()
-        let content = NSHostingView(rootView:Controls(model:model,updater:updater))
-        // The window owns its size. SwiftUI's ideal content height must never
-        // stretch it to the screen edges; every control stays visible beside the preview.
-        content.sizingOptions = []
         window = NSWindow(contentRect:NSRect(x:0,y:0,width:940,height:528),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
         window.delegate = self
         window.title = "Mac Duo"
         window.titlebarAppearsTransparent = true
         window.backgroundColor = .windowBackgroundColor
-        window.contentView = content
         window.collectionBehavior = [.fullScreenNone]
         window.isReleasedWhenClosed = false
-        fitSettingsWindow(center:true)
         screenObserver = NotificationCenter.default.addObserver(forName:NSApplication.didChangeScreenParametersNotification,object:nil,queue:.main) { [weak self] _ in
             MainActor.assumeIsolated { self?.fitSettingsWindow() }
         }
@@ -47,8 +43,10 @@ import OSLog
         let submenu = NSMenu();submenu.addItem(effectItem());submenu.addItem(appearanceItem());submenu.addItem(updateItem());submenu.addItem(.separator())
         submenu.addItem(withTitle:L10n.text("Quit Mac Duo"),action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
         appItem.submenu = submenu;NSApp.mainMenu = appMenu
-        showSettings()
         UpdateInstallation.confirmRelaunch()
+        let shellMilliseconds = Int((ProcessInfo.processInfo.systemUptime-launchStartedAt)*1_000)
+        launchLogger.notice("Launch shell ready after \(shellMilliseconds,privacy:.public) ms; settings content deferred one main-queue turn.")
+        DispatchQueue.main.async { [weak self] in self?.finishSettingsLaunch(startedAt:launchStartedAt) }
         if let index = CommandLine.arguments.firstIndex(of:"--overlay-check"), index+1 < CommandLine.arguments.count {
             let path = CommandLine.arguments[index+1]
             DispatchQueue.main.asyncAfter(deadline:.now()+1) { [weak self] in self?.model.checkOverlay(output:path) }
@@ -56,6 +54,17 @@ import OSLog
         if CommandLine.arguments.contains("--enable") {
             DispatchQueue.main.asyncAfter(deadline:.now()+1) { [weak self] in self?.model.enable() }
         }
+    }
+    private func finishSettingsLaunch(startedAt: TimeInterval) {
+        let content = NSHostingView(rootView:Controls(model:model,updater:updater))
+        // The window owns its size. SwiftUI's ideal content height must never
+        // stretch it to the screen edges; every control stays visible beside the preview.
+        content.sizingOptions = []
+        window.contentView = content
+        fitSettingsWindow(center:true)
+        showSettings()
+        let milliseconds = Int((ProcessInfo.processInfo.systemUptime-startedAt)*1_000)
+        launchLogger.notice("Settings window ready after \(milliseconds,privacy:.public) ms.")
     }
     private var floatingBounds: NSRect {
         let visible = (window.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x:0,y:0,width:1024,height:768)
@@ -218,7 +227,7 @@ if let index = CommandLine.arguments.firstIndex(of:"--update-package-check"), in
         try UpdateInstallation.checkPackage(archive:URL(fileURLWithPath:CommandLine.arguments[index+1]),
                                             manifest:URL(fileURLWithPath:CommandLine.arguments[index+2]),
                                             version:CommandLine.arguments[index+3],output:URL(fileURLWithPath:CommandLine.arguments[index+4],isDirectory:true))
-        print("Package checksum, bounded extraction, bundle identity, version, macOS, architecture, and code signature verified.");exit(0)
+        print("Package checksum, bounded extraction, bundle identity, version, macOS, architecture, and internal code-signature consistency verified; publisher authenticity is not established.");exit(0)
     } catch { fputs("Package check failed: \(error.localizedDescription)\n",stderr);exit(1) }
 }
 if let index = CommandLine.arguments.firstIndex(of:"--update-installer-fixture"), index+1 < CommandLine.arguments.count {

@@ -552,8 +552,15 @@ enum UpdateInstallation {
             let folders = (try? FileManager.default.contentsOfDirectory(at:cache,includingPropertiesForKeys:nil)) ?? []
             jobs = folders.prefix(16).compactMap { try? readJob($0.lastPathComponent) }
         }
-        for job in jobs where job.identity.map({ matches(Bundle.main,identity:$0) }) == true {
+        if !jobs.isEmpty {
+            let bundleIdentifier = Bundle.main.bundleIdentifier
+            let version = Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String
+            let executableHash = Bundle.main.executableURL.flatMap { try? hash($0) }
+            for job in jobs {
+                guard let identity = job.identity, let executableHash,
+                      identity.matches(bundleIdentifier:bundleIdentifier,version:version,executableHash:executableHash) else { continue }
                 try? Data("ready".utf8).write(to:job.folder.appendingPathComponent("ready"),options:.atomic)
+            }
         }
         if CommandLine.arguments.contains("--update-rolled-back") {
             let alert = NSAlert();alert.messageText = L10n.text("The previous Mac Duo was restored")

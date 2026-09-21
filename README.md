@@ -33,7 +33,7 @@ Hold the lid still and the screen clears after **1–5 seconds**—**2 seconds**
 
 ## Install
 
-**Mac Duo 0.1.14 supports macOS 13 Ventura or newer**, with six effects including Ghost. A compatible continuous lid-angle sensor is required. The native Apple-silicon build was tested on an M4 Mac; physical Ventura and Intel testing are still pending.
+**Mac Duo 0.1.15 supports macOS 13 Ventura or newer**, with six effects including Ghost. A compatible continuous lid-angle sensor is required. The native Apple-silicon build was tested on an M4 Mac; physical Ventura, clamshell/mirroring and Intel testing are still pending.
 
 > [!NOTE]
 > **MacBook compatibility · macOS 13+**<br>

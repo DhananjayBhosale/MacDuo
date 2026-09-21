@@ -74,7 +74,7 @@
 "Synthetic overlay test completed." = "合成叠加层测试已完成。";
 "Desktop test finished. Following your lid." = "桌面测试已完成。正在跟随屏幕开合。";
 "Waiting for the lid sensor. Your desktop is clear." = "正在等待屏幕开合传感器。桌面效果已清除。";
-"Mac Duo needs an active, unmirrored built-in display." = "Mac Duo 需要已启用且未处于镜像模式的内置显示屏。";
+"Waiting for an active, unmirrored built-in display. Following will resume automatically." = "正在等待已启用且未处于镜像模式的内置显示屏。检测到后将自动恢复跟随。";
 "Cannot capture the desktop: %@" = "无法捕获桌面：%@";
 "Could not register Esc. Close other keyboard utilities and try again." = "无法注册 Esc 键。请关闭其他键盘工具后重试。";
 "Stopped with the keyboard shortcut. Your desktop is clear." = "已通过快捷键停止。桌面效果已清除。";

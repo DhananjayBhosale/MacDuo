@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.15 · 21 September 2026
+
+- **Clamshell and mirroring recovery.** When the built-in display becomes unavailable or mirrored, Mac Duo now clears the overlay without switching itself off. Following resumes automatically when an active, unmirrored built-in display returns.
+- **Faster capture restarts.** ScreenCaptureKit display discovery is reused between capture starts, invalidated when the display layout changes, and refreshed once if a cached start fails.
+- **More resilient launches.** The settings renderer is initialized after the initial app-launch handshake, pending update jobs share one executable validation pass, and launch/capture timing is logged for diagnostics.
+- **Clearer update security wording.** Package checks now state that checksums and internal code-signature consistency verify integrity, not publisher authenticity.
+- **Secure lock-screen behavior.** Desktop capture deliberately stops when the macOS user session locks and never renders captured desktop content over the secure login screen.
+
+The Apple-silicon renderer and native ARM64 download remain unchanged in architecture and performance path. All source tests, six GPU effects, package validation, update replacement/rollback, and an M4 app launch passed. Clamshell/mirroring behavior and the Intel preview still need confirmation on affected physical hardware.
+
 ## 0.1.14 · 11 September 2026
 
 - **Separate native Intel preview.** The normal Mac Duo build and downloads remain ARM64-only for M-series Macs. Independently packaged x86_64 downloads are available for Intel models that expose the continuous lid-angle HID sensor, notably the 2019 16-inch MacBook Pro. Older models with only an open/closed clamshell switch remain unsupported.

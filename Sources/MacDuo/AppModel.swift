@@ -119,6 +119,8 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     private var displayAwake = true
     private var sensorAt: TimeInterval = 0
     private var waitingForSensor = false
+    private var waitingForDisplay = false
+    private var displayGeneration: UInt64 = 0
     private var stillness = LidStillness()
     private var liveAnimation = FoldVisualAnimation()
     private var motionReference = LidMotionReference()
@@ -183,7 +185,19 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         }
         capture.onFirstFrame = { [weak self] in self?.update() }
         capture.onUnavailable = { [weak self] in self?.hideOverlay() }
-        capture.onFailure = { [weak self] reason in self?.pause(L10n.format("Capture stopped: %@",reason)) }
+        capture.onFailure = { [weak self] reason in
+            guard let self else { return }
+            let generation = self.displayGeneration
+            self.hideOverlay()
+            // ScreenCaptureKit can report the stream failure before AppKit posts
+            // the corresponding topology notification. Let that notification run
+            // before deciding whether this is a real failure or clamshell mode.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.enabled, generation == self.displayGeneration else { return }
+                if self.liveDisplay() == nil { self.suspendForDisplay() }
+                else { self.pause(L10n.format("Capture stopped: %@",reason)) }
+            }
+        }
         registerHotKey()
         sensor.start()
         timer = Timer(timeInterval:0.1,repeats:true) { [weak self] _ in
@@ -258,7 +272,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     var liveProgress: Double { liveState.progress }
 
     private var liveState: FoldVisualState {
-        guard enabled,sessionActive,systemAwake,displayAwake,!waitingForSensor else { return .clear }
+        guard enabled,sessionActive,systemAwake,displayAwake,!waitingForSensor,!waitingForDisplay else { return .clear }
         if let start = demoStart {
             let t = min(1,(ProcessInfo.processInfo.systemUptime-start)/demoDuration)
             return .at(angle:demoAngle(t),reference:fixedReference)
@@ -330,7 +344,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
             syntheticCheckPath = nil
             renderer?.reportsEveryPresentation = false
         }
-        enabled = false;demoStart = nil;demoRunning = false
+        enabled = false;waitingForDisplay = false;demoStart = nil;demoRunning = false
         hideOverlay();capture.stop();status = message
     }
 
@@ -373,6 +387,22 @@ enum AppAppearance: String, CaseIterable, Identifiable {
             guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
             return CGDisplayIsBuiltin(n.uint32Value) != 0 && CGDisplayIsActive(n.uint32Value) != 0
         }
+    }
+
+    private func liveDisplay() -> (screen: NSScreen, id: CGDirectDisplayID)? {
+        guard let screen = builtInScreen(),
+              let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
+              CGDisplayIsInMirrorSet(number.uint32Value) == 0 else { return nil }
+        return (screen,number.uint32Value)
+    }
+
+    private func suspendForDisplay() {
+        hideOverlay()
+        if capture.isRunning { capture.stop() }
+        guard !waitingForDisplay else { return }
+        waitingForDisplay = true
+        status = L10n.text("Waiting for an active, unmirrored built-in display. Following will resume automatically.")
+        logger.notice("Built-in display unavailable or mirrored: effect suspended; following remains enabled.")
     }
 
     private func prepareOverlay(on screen: NSScreen) throws {
@@ -444,24 +474,36 @@ enum AppAppearance: String, CaseIterable, Identifiable {
             waitingForSensor = false;updateStillnessStatus()
             logger.notice("Fresh sensor reports received; automatic following resumed.")
         }
-        let target = liveProgress
         let shouldCapture = demoRunning || (!shouldClearForStillness && (lidAngle ?? 180) < liveReference+14)
-        guard shouldCapture || capture.isRunning || overlayVisible else { return }
-        guard let screen = builtInScreen(), let display = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
-              CGDisplayIsInMirrorSet(display.uint32Value) == 0 else {
-            pause(L10n.text("Mac Duo needs an active, unmirrored built-in display."));return
+        guard shouldCapture || capture.isRunning || overlayVisible || waitingForDisplay else { return }
+        guard let display = liveDisplay() else { suspendForDisplay();return }
+        if waitingForDisplay {
+            waitingForDisplay = false
+            updateStillnessStatus()
+            logger.notice("Built-in display available: automatic following resumed.")
         }
+        let target = liveProgress
         if shouldCapture {
             idleSince = nil
-            do { try prepareOverlay(on:screen) } catch { pause(error.localizedDescription);return }
+            do { try prepareOverlay(on:display.screen) } catch { pause(error.localizedDescription);return }
             if !capture.isRunning && syntheticCheckPath == nil {
-                let width = Int(screen.frame.width*screen.backingScaleFactor)
-                let height = Int(screen.frame.height*screen.backingScaleFactor)
-                Task {
-                    guard enabled,sessionActive,systemAwake,displayAwake,!shouldClearForStillness,
-                          ProcessInfo.processInfo.systemUptime-sensorAt <= 1 else { return }
-                    do { try await capture.start(displayID:display.uint32Value,width:width,height:height,fps:min(60,fps)) }
-                    catch { if enabled { pause(L10n.format("Cannot capture the desktop: %@",error.localizedDescription)) } }
+                let width = Int(display.screen.frame.width*display.screen.backingScaleFactor)
+                let height = Int(display.screen.frame.height*display.screen.backingScaleFactor)
+                let generation = displayGeneration
+                Task { [weak self] in
+                    guard let self, generation == self.displayGeneration,self.enabled,self.sessionActive,self.systemAwake,self.displayAwake,!self.shouldClearForStillness,
+                          !self.waitingForDisplay,ProcessInfo.processInfo.systemUptime-self.sensorAt <= 1 else { return }
+                    do { try await self.capture.start(displayID:display.id,width:width,height:height,fps:min(60,self.fps)) }
+                    catch {
+                        let reason = error.localizedDescription
+                        // A capture start can fail just before the topology
+                        // notification arrives. Decide after that main-queue turn.
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self, self.enabled, generation == self.displayGeneration else { return }
+                            if self.liveDisplay() == nil { self.suspendForDisplay() }
+                            else { self.pause(L10n.format("Cannot capture the desktop: %@",reason)) }
+                        }
+                    }
                 }
             }
         } else if capture.isRunning {
@@ -594,7 +636,12 @@ enum AppAppearance: String, CaseIterable, Identifiable {
             })
         }
         notifications.append(NotificationCenter.default.addObserver(forName:NSApplication.didChangeScreenParametersNotification,object:nil,queue:.main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.hideOverlay();self?.capture.stop();self?.panel?.close();self?.panel = nil;self?.screenID = nil }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.displayGeneration &+= 1
+                self.capture.invalidateDisplayCache()
+                self.hideOverlay();self.capture.stop();self.panel?.close();self.panel = nil;self.screenID = nil
+            }
         })
         notifications.append(nc.addObserver(forName:NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,object:nil,queue:.main) { [weak self] _ in
             MainActor.assumeIsolated { self?.reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }

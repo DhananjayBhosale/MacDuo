@@ -36,7 +36,7 @@ ScreenCaptureKit excludes this app from its own capture. Audio capture is disabl
 
 The HID reader runs off the main thread. A Metal fragment shader and reusable blur pyramid render the effect. Reduce Motion uses a simple fade. Capture stops when the effect clears, and sensor/capture failures restore the desktop.
 
-macOS owns sleep and the secure login screen. Animation cannot be guaranteed while the display is asleep, during login or with protected content. Capture may take a moment to warm up; the desktop and live preview remain clear until a fresh frame is ready.
+macOS owns sleep and the secure login screen. Mac Duo deliberately stops capture when the user session locks and never renders captured desktop content over the secure login screen. Animation cannot be guaranteed while the display is asleep, during login or with protected content. Capture may take a moment to warm up; the desktop and live preview remain clear until a fresh frame is ready.
 
 ## Verify
 
@@ -47,6 +47,14 @@ swift build
 ```
 
 The render check uses generated artwork only; it does not capture the desktop. It verifies all six effects: pixel identity when open/reopened, black closure, opacity, blur, practical geometry, distinct intermediate frames, smooth onset, Reduce Motion, cache freshness and GPU timing. Add `--animation` to export generated closing/reopening frames for every effect. GPU measurements exclude capture and display composition. Physical lid sweeps, sustained energy use and platform lifecycle transitions still need testing on more hardware.
+
+## Version 0.1.15
+
+Display topology changes are fail-clear and preserve the user's enabled state. A missing or mirrored built-in display stops capture, invalidates the cached ScreenCaptureKit display, and waits for an active unmirrored built-in display before resuming. Stream-stop and in-flight start failures use the same generation-guarded decision so stale failures cannot disable a newly restored display.
+
+ScreenCaptureKit shareable content is cached after access verification and refreshed on topology changes or once after a cached start failure. Launch work defers the SwiftUI/Metal settings content by one main-queue turn, hashes the executable only when pending update jobs exist, and records launch/capture timing. Package-check output distinguishes archive integrity and internal signature consistency from publisher authenticity. Capture stops while the macOS user session is locked.
+
+The ARM64 and x86_64 downloads remain separate native builds. The renderer and shader path are unchanged. Source tests, localization coverage, all six generated GPU checks, package extraction, the LaunchServices ready handshake, replacement/rollback, and a packaged app launch passed on an M4 Mac. Physical clamshell/mirroring, Ventura and Intel confirmation remain pending.
 
 ## Version 0.1.14
 

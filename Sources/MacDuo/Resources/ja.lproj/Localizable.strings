@@ -74,7 +74,7 @@
 "Synthetic overlay test completed." = "生成画像のオーバーレイテストが完了しました。";
 "Desktop test finished. Following your lid." = "デスクトップテストが終了しました。画面の開閉に追従中です。";
 "Waiting for the lid sensor. Your desktop is clear." = "開閉センサーを待機中です。デスクトップの効果は解除されています。";
-"Mac Duo needs an active, unmirrored built-in display." = "Mac Duo にはミラーリングしていない有効な内蔵ディスプレイが必要です。";
+"Waiting for an active, unmirrored built-in display. Following will resume automatically." = "有効でミラーリングされていない内蔵ディスプレイを待機中です。利用可能になると自動的に追従を再開します。";
 "Cannot capture the desktop: %@" = "デスクトップをキャプチャできません：%@";
 "Could not register Esc. Close other keyboard utilities and try again." = "Esc を登録できません。他のキーボードユーティリティを終了して再試行してください。";
 "Stopped with the keyboard shortcut. Your desktop is clear." = "ショートカットで停止しました。デスクトップの効果は解除されています。";
